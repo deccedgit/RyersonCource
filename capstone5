@@ -1,0 +1,89 @@
+from pandas import DataFrame, read_csv
+from langdetect import detect 	#language detector
+import sqlite3 					#sqlite connector	
+from textblob import TextBlob
+import pandas as pd
+import numpy as np
+
+
+# connecting to database
+conn=sqlite3.connect('d:/temp/database.sqlite')
+c = conn.cursor()
+print ("Connected...")
+
+#set variables
+#dataframe to hold working data
+brand=pd.DataFrame(columns=['Name', 'Positive', 'Negative', 'Neutral', 'Not English', 'Errors'])
+#dataframe for consolidation
+brand2=pd.DataFrame(columns=['Name', 'Positive', 'Negative', 'Neutral', 'Not English', 'Errors'])
+#brand=brand.append({'Name':'zara', 'Positive':0, 'Negative':0, 'Neutral':0, 'Not English':0, 'Errors':0}, ignore_index=True)
+#brand.set_index('Name')
+print 
+   
+#global comment counter
+i=1
+
+print("global variables set...")
+
+#each row is composed of two records: brand and comment
+for row in c.execute('SELECT * FROM mentions;'):
+    try:
+        # set counters for row
+        en_ct=0
+        non_en_ct=0
+        errors_ct=0
+        pos=0
+        neg=0
+        neut=0
+        
+        # detect language
+        item=detect(row[0])
+        
+        # for english items, evaluate sentiment
+        if item == 'en':
+            en_ct+=1
+            comment = TextBlob(row[0])
+            score= comment.sentiment
+            #print (score)
+            if score[0] == 0:
+                #print ("Comment is neutral")
+                neut+=1
+            elif score[0] > 0:
+                #print ("comment is positive")
+                #print(comment)
+                pos+=1
+            else:
+                #print ("comment is negative")
+                neg+=1
+        
+        #for non-english, skip
+        else:
+            #print ("non-english")
+            non_en_ct+=1
+        
+        
+
+        # in case of error during language detection, skip item and move to next row
+    except:
+            errors_ct+=1
+            print ("row:", i, "Error - Skipping")
+            #print row to see why error is generated (mostly http codes)
+            #print (row[0])
+    # Print result of comment analysis    
+    print ("Processing:",i, "Brand:" ,row[1], "English:",en_ct, "Non-English:", non_en_ct, "Errors", errors_ct, 'Positive', pos, 'Negative', neg, 'Neutral', neut)
+    
+    # add row with results to Dataframe
+    brand=brand.append({'Name':row[1], 'Positive':pos, 'Negative':neg, 'Neutral':neut, 'Not English':non_en_ct, 'Errors':errors_ct}, ignore_index=True)
+    
+    
+    #increment global counters & add up results every 1000 records
+    
+    if i % 1000 ==0:
+        frames=[brand, brand2]
+        brand2 = pd.concat(frames)
+        brand2 = pd.pivot_table(brand2, index=['Name'], aggfunc=np.sum)
+        print (brand2)
+        
+    i+=1
+    
+brand2.to_csv('brandout.csv')
